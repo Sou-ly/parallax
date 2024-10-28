@@ -8,49 +8,49 @@ import cv2
 def segment_image(input_path, output_dir):
     try:
         os.makedirs(output_dir, exist_ok=True)
-        
+
         # Get base filename without extension
         base_name = os.path.splitext(os.path.basename(input_path))[0]
-        
+
         # Load and process the image
         input_image = Image.open(input_path)
-        
+
         # Remove background and get RGBA result
         output = remove(input_image)
-        
+
         # Create paths for all output files
         character_path = os.path.join(output_dir, f"{base_name}_character.png")
         background_path = os.path.join(output_dir, f"{base_name}_background.png")
         mask_path = os.path.join(output_dir, f"{base_name}_mask.png")
-        
+
         # Save the character with transparent background
         output.save(character_path)
-        
+
         # Create and save the binary mask
         mask = output.split()[3]  # Get alpha channel
         mask.save(mask_path)
-        
+
         # Create the background image by removing the character
         # Convert mask to numpy array
         mask_np = np.array(mask)
         input_np = np.array(input_image)
-        
+
         # Create inverted mask for background
         inv_mask = (255 - mask_np) / 255.0
-        
+
         # Apply inverted mask to get background
         background = input_np.copy()
         for i in range(3):  # Apply to each RGB channel
-            background[:,:,i] = background[:,:,i] * inv_mask
-            
+            background[:, :, i] = background[:, :, i] * inv_mask
+
         # Convert back to PIL Image and save
         background_img = Image.fromarray(background)
         background_img.save(background_path)
-        
+
         print(f"Segmented character saved to: {character_path}")
         print(f"Background saved to: {background_path}")
         print(f"Binary mask saved to: {mask_path}")
-        
+
     except Exception as e:
         print(f"An error occurred: {str(e)}")
 
@@ -97,6 +97,24 @@ def translate_character(character_path, background_path, output_dir, position, f
     except Exception as e:
         print(f"An error occurred during character translation for frame {frame_index}: {str(e)}")
 
+# TODO: Implement background generation to fill areas based on parallax effect
+def generate_background(background_path, mask_path, output_dir):
+    """Generate background using OpenCV's inpainting to fill masked areas."""
+    # Read the background and mask images
+    background = cv2.imread(background_path)
+    mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
+
+    # Perform inpainting
+    # radius=3: considers a 3px neighborhood for inpainting
+    # cv2.INPAINT_TELEA: uses Alexandru Telea's algorithm (faster and simpler than NS)
+    result = cv2.inpaint(background, mask, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
+
+    # Save the result
+    output_path = os.path.join(output_dir, "image_background.png")
+    cv2.imwrite(output_path, result)
+    print(f"Inpainted background saved to: {output_path}")
+
+
 def create_video(output_dir, video_path, frame_rate=24):
     try:
         # Get list of all frames in sorted order
@@ -121,6 +139,7 @@ def create_video(output_dir, video_path, frame_rate=24):
     except Exception as e:
         print(f"An error occurred while creating the video: {str(e)}")
 
+
 def main():
     parser = argparse.ArgumentParser(description='Segment character, translate with keyframes, and create parallax video.')
     parser.add_argument('--input_path', default='image.jpg', help='Path to the input image')
@@ -141,6 +160,9 @@ def main():
     
     # Step 1: Segment the image into character and background
     segment_image(args.input_path, args.output_dir)
+
+    # Step 1bis: generate background
+    generate_background("output\image_background.png", "output\image_mask.png", "output")
     
     # Step 2: Generate frames by moving the character based on keypoint interpolation
     total_frames = int(keypoints[-1][0] * args.frame_rate)
@@ -156,6 +178,7 @@ def main():
     
     # Step 3: Compile frames into a video
     create_video(args.output_dir, args.video_path, args.frame_rate)
+
 
 if __name__ == "__main__":
     main()
